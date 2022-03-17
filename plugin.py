@@ -26,7 +26,7 @@ import os
 
 from unmanic.libs.unplugins.settings import PluginSettings
 
-from lib.ffmpeg import StreamMapper, Probe, Parser
+from encoder_video_libvpx_vp9.lib.ffmpeg import StreamMapper, Probe, Parser
 
 # Configure plugin logger
 logger = logging.getLogger("Unmanic.Plugin.encoder_video_libvpx_vp9")
@@ -109,7 +109,11 @@ class Settings(PluginSettings):
 
 class PluginStreamMapper(StreamMapper):
     def __init__(self):
-        super(StreamMapper, self).__init__(logger, 'video')
+        super(PluginStreamMapper, self).__init__(logger, ['video'])
+        self.settings = None
+
+    def set_settings(self, settings):
+        self.settings = settings
 
     def test_stream_needs_processing(self, stream_info: dict):
         if stream_info.get('codec_name').lower() in ['vp9']:
@@ -117,51 +121,50 @@ class PluginStreamMapper(StreamMapper):
         return True
 
     def custom_stream_mapping(self, stream_info: dict, stream_id: int):
-        settings = Settings()
         # Default settings for 'Average Bitrate' encoder mode
         stream_encoding = ['-c:v:{}'.format(stream_id), 'libvpx-vp9', '-b:v', '2M']
 
         # Set stream encoder bitrate
-        encoder_mode = settings.get_setting('mode')
+        encoder_mode = self.settings.get_setting('mode')
         if encoder_mode == 'average_bitrate':
             stream_encoding = [
                 '-c:v:{}'.format(stream_id), 'libvpx-vp9',
-                '-b:v:{}'.format(stream_id), settings.get_setting('bitrate'),
+                '-b:v:{}'.format(stream_id), self.settings.get_setting('bitrate'),
                 '-threads', '8',
                 '-row-mt', '1',
-                '-deadline', settings.get_setting('deadline'),
-                '-cpu-used', settings.get_setting('cpu-used')
+                '-deadline', self.settings.get_setting('deadline'),
+                '-cpu-used', self.settings.get_setting('cpu-used')
             ]
         elif encoder_mode == 'constant_quality':
             stream_encoding = [
                 '-c:v:{}'.format(stream_id), 'libvpx-vp9',
-                '-crf', settings.get_setting('crf'),
+                '-crf', self.settings.get_setting('crf'),
                 '-b:v:{}'.format(stream_id), '0',
                 '-threads', '8',
                 '-row-mt', '1',
-                '-deadline', settings.get_setting('deadline'),
-                '-cpu-used', settings.get_setting('cpu-used')
+                '-deadline', self.settings.get_setting('deadline'),
+                '-cpu-used', self.settings.get_setting('cpu-used')
             ]
         elif encoder_mode == 'constrained_quality':
             stream_encoding = [
                 '-c:v:{}'.format(stream_id), 'libvpx-vp9',
-                '-crf', settings.get_setting('crf'),
-                '-b:v:{}'.format(stream_id), settings.get_setting('bitrate'),
+                '-crf', self.settings.get_setting('crf'),
+                '-b:v:{}'.format(stream_id), self.settings.get_setting('bitrate'),
                 '-threads', '8',
                 '-row-mt', '1',
-                '-deadline', settings.get_setting('deadline'),
-                '-cpu-used', settings.get_setting('cpu-used')
+                '-deadline', self.settings.get_setting('deadline'),
+                '-cpu-used', self.settings.get_setting('cpu-used')
             ]
         elif encoder_mode == 'constant_bitrate':
             stream_encoding = [
                 '-c:v:{}'.format(stream_id), 'libvpx-vp9',
-                '-minrate', settings.get_setting('bitrate'),
-                '-maxrate', settings.get_setting('bitrate'),
-                '-b:v:{}'.format(stream_id), settings.get_setting('bitrate'),
+                '-minrate', self.settings.get_setting('bitrate'),
+                '-maxrate', self.settings.get_setting('bitrate'),
+                '-b:v:{}'.format(stream_id), self.settings.get_setting('bitrate'),
                 '-threads', '8',
                 '-row-mt', '1',
-                '-deadline', settings.get_setting('deadline'),
-                '-cpu-used', settings.get_setting('cpu-used')
+                '-deadline', self.settings.get_setting('deadline'),
+                '-cpu-used', self.settings.get_setting('cpu-used')
             ]
         elif encoder_mode == 'lossless':
             stream_encoding = [
@@ -169,8 +172,8 @@ class PluginStreamMapper(StreamMapper):
                 '-lossless', '1',
                 '-threads', '8',
                 '-row-mt', '1',
-                '-deadline', settings.get_setting('deadline'),
-                '-cpu-used', settings.get_setting('cpu-used')
+                '-deadline', self.settings.get_setting('deadline'),
+                '-cpu-used', self.settings.get_setting('cpu-used')
             ]
 
         return {
@@ -196,11 +199,18 @@ def on_library_management_file_test(data):
     abspath = data.get('path')
 
     # Get file probe
-    probe = Probe(logger)
+    probe = Probe(logger, allowed_mimetypes=['video'])
     probe.file(abspath)
+
+    # Configure settings object (maintain compatibility with v1 plugins)
+    if data.get('library_id'):
+        settings = Settings(library_id=data.get('library_id'))
+    else:
+        settings = Settings()
 
     # Get stream mapper
     mapper = PluginStreamMapper()
+    mapper.set_settings(settings)
     mapper.set_probe(probe)
 
     if mapper.streams_need_processing():
@@ -239,11 +249,18 @@ def on_worker_process(data):
     abspath = data.get('file_in')
 
     # Get file probe
-    probe = Probe(logger)
+    probe = Probe(logger, allowed_mimetypes=['video'])
     probe.file(abspath)
+
+    # Configure settings object (maintain compatibility with v1 plugins)
+    if data.get('library_id'):
+        settings = Settings(library_id=data.get('library_id'))
+    else:
+        settings = Settings()
 
     # Get stream mapper
     mapper = PluginStreamMapper()
+    mapper.set_settings(settings)
     mapper.set_probe(probe)
 
     if mapper.streams_need_processing():
